@@ -29,7 +29,7 @@ All the env vars should be self-explanatory except for `POLL_INTERVAL` which is 
 
 ### Design
 
-<embed src="./assets/notes.pdf" width="500" height="375" type="application/pdf">
+See [design notes](./assets/notes.pdf).
 
 ### Data
 
