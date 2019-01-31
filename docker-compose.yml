@@ -1,0 +1,38 @@
+version: '3'
+services:
+  app:
+    image: golang
+    volumes:
+      - .:/go/src/github.com/eggsbenjamin/square_enix
+    working_dir: /go/src/github.com/eggsbenjamin/square_enix
+    links:
+      - db
+    depends_on:
+      - db_bootstrap
+    command:
+      - /bin/bash
+      - -c
+      - |
+        sleep 5 # wait for schema to be created
+        make test
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ALLOW_EMPTY_PASSWORD=yes
+      - MYSQL_DATABASE=square_enix
+  db_bootstrap:
+    image: mysql:8.0
+    volumes:
+      - ./sql:/sql
+    links:
+      - db
+    depends_on:
+      - db
+    command:
+      - /bin/sh
+      - -c
+      - |
+        sleep 3 # wait for db to be up
+        echo 'creating schema...'
+        mysql -v -u root -h db square_enix < /sql/schema.sql
+        echo 'schema created'
