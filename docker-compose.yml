@@ -8,12 +8,17 @@ services:
     links:
       - db
     depends_on:
+      - db
       - db_bootstrap
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_USER=root
+      - MYSQL_DB=square_enix
     command:
       - /bin/bash
       - -c
       - |
-        sleep 5 # wait for schema to be created
+        sleep 4 # wait for schema to be created
         make test
   db:
     image: mysql:8.0
