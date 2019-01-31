@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"log"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -10,10 +11,18 @@ import (
 	"github.com/eggsbenjamin/square_enix/internal/app/repository"
 )
 
-var ErrNoRunningProcess = errors.New("no running process")
+var (
+	ErrNoProcessExists        = errors.New("no process exists")
+	ErrNoRunningProcessExists = errors.New("no running process")
+	ErrRunningProcessExists   = errors.New("running process exists")
+)
 
 type Processor interface {
-	Process(batchSize int) error
+	Start() error
+	Pause() error
+	RunningProcessExists() (bool, error)
+	ProcessBatch(batchSize int) error
+	GetLatestsStat() (int, error)
 }
 
 type processor struct {
@@ -22,16 +31,84 @@ type processor struct {
 	elementRepoFactory repository.ElementRepositoryFactory
 }
 
-func (p *processor) Process(batchSize int) error {
+func NewProcessor(
+	db db.DB,
+	processRepoFactory repository.ProcessRepositoryFactory,
+	elementRepoFactory repository.ElementRepositoryFactory,
+) Processor {
+	return &processor{
+		db:                 db,
+		processRepoFactory: processRepoFactory,
+		elementRepoFactory: elementRepoFactory,
+	}
+}
+
+func (p *processor) Start() error {
+	tx, err := p.db.Beginx()
+	if err != nil {
+		return errors.Wrap(err, "error beginning transaction")
+	}
+
+	pausedProcesses, err := p.processRepoFactory.CreateProcessRepository(p.db).GetByStatus(models.PROCESS_STATUS_PAUSED)
+	if err != nil {
+		return errors.Wrap(err, "error retreiving running processes")
+	}
+
+	if len(pausedProcesses) > 0 {
+		pausedProcess := pausedProcesses[0]
+		pausedProcess.Status = models.PROCESS_STATUS_RUNNING
+
+		log.Printf("resuming process: %d\n", pausedProcess.ID)
+		return p.processRepoFactory.CreateProcessRepository(p.db).UpdateProcess(pausedProcess)
+	}
+
+	if _, err := p.processRepoFactory.CreateProcessRepository(tx).CreateNewProcess(); err != nil {
+		if err == repository.ErrRunningProcessExists {
+			return ErrRunningProcessExists
+		}
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (p *processor) Pause() error {
+	processRepo := p.processRepoFactory.CreateProcessRepository(p.db)
+	latestProcess, err := processRepo.GetLatestProcess()
+	if err != nil {
+		if err == repository.ErrNoProcessExists {
+			return ErrNoProcessExists
+		}
+		return err
+	}
+
+	if latestProcess.Status != models.PROCESS_STATUS_RUNNING {
+		return ErrNoRunningProcessExists
+	}
+
+	latestProcess.Status = models.PROCESS_STATUS_PAUSED
+
+	return processRepo.UpdateProcess(latestProcess)
+}
+
+func (p *processor) RunningProcessExists() (bool, error) {
+	runningProcesses, err := p.processRepoFactory.CreateProcessRepository(p.db).GetByStatus(models.PROCESS_STATUS_RUNNING)
+	if err != nil {
+		return false, errors.Wrap(err, "error retreiving running processes")
+	}
+
+	return len(runningProcesses) > 0, nil
+}
+
+func (p *processor) ProcessBatch(batchSize int) error {
 	// query db for running process
 	runningProcesses, err := p.processRepoFactory.CreateProcessRepository(p.db).GetByStatus(models.PROCESS_STATUS_RUNNING)
 	if err != nil {
-		// if not found return meaningful error - ErrNoRunningProcess
 		return errors.Wrap(err, "error retreiving running processes")
 	}
 
 	if len(runningProcesses) == 0 {
-		return ErrNoRunningProcess
+		return ErrNoRunningProcessExists
 	}
 
 	if len(runningProcesses) > 1 {
@@ -60,7 +137,7 @@ func (p *processor) Process(batchSize int) error {
 			- were created on or before the created_at field of the current running process
 	*/
 
-	elementsToBeProcessed, err := elementRepo.LockElementsForUpdate(process.ID, 50)
+	elementsToBeProcessed, err := elementRepo.LockElementsForUpdate(process.ID, batchSize)
 	if err != nil {
 		return errors.Wrap(err, "error locking elements")
 	}
@@ -95,6 +172,7 @@ func (p *processor) Process(batchSize int) error {
 
 		process.Status = models.PROCESS_STATUS_COMPLETE
 
+		log.Printf("completing proces: %d\n", process.ID)
 		if err := processRepo.UpdateProcess(process); err != nil {
 			return errors.Wrap(err, "error completing process")
 		}
@@ -110,10 +188,12 @@ func (p *processor) Process(batchSize int) error {
 		- return nil
 	*/
 
+	log.Printf("processing %d elements as part of process: %d\n", len(elementsToBeProcessed), process.ID)
+
 	for _, element := range elementsToBeProcessed {
 		element.Data = strings.ToUpper(element.Data)
 
-		if err := elementRepo.UpdateElement(element); err != nil {
+		if err := elementRepo.UpdateElementForProcess(element, process.ID); err != nil {
 			return errors.Wrap(err, "error updating element")
 		}
 	}
@@ -121,4 +201,22 @@ func (p *processor) Process(batchSize int) error {
 	// commit the transaction
 
 	return tx.Commit()
+}
+
+func (p *processor) GetLatestsStat() (int, error) {
+	latestProcess, err := p.processRepoFactory.CreateProcessRepository(p.db).GetLatestProcess()
+	if err != nil {
+		if err == repository.ErrNoProcessExists {
+			return 0, ErrNoProcessExists
+		}
+
+		return 0, err
+	}
+
+	processElements, err := p.elementRepoFactory.CreateElementRepository(p.db).GetElementsByProcessID(latestProcess.ID)
+	if err != nil {
+		return 0, err
+	}
+
+	return len(processElements), nil
 }

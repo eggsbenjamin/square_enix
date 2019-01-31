@@ -1,14 +1,22 @@
 package repository
 
 import (
+	"errors"
+
 	"github.com/eggsbenjamin/square_enix/internal/app/db"
 	"github.com/eggsbenjamin/square_enix/internal/app/models"
+)
+
+var (
+	ErrNoProcessExists      = errors.New("no process exists")
+	ErrRunningProcessExists = errors.New("running process exists")
 )
 
 type ProcessRepository interface {
 	CreateNewProcess() (models.Process, error)
 	UpdateProcess(models.Process) error
 	GetByStatus(status string) ([]models.Process, error)
+	GetLatestProcess() (models.Process, error)
 }
 
 type processRepo struct {
@@ -25,6 +33,15 @@ func (p *processRepo) CreateNewProcess() (models.Process, error) {
 	var process models.Process
 	if _, err := p.db.Exec("LOCK TABLES Process WRITE"); err != nil {
 		return process, err
+	}
+
+	runningProcesses, err := p.GetByStatus(models.PROCESS_STATUS_RUNNING)
+	if err != nil {
+		return process, err
+	}
+
+	if len(runningProcesses) > 0 {
+		return process, ErrRunningProcessExists
 	}
 
 	if _, err := p.db.Exec("INSERT INTO Process (status) VALUES (?)", models.PROCESS_STATUS_RUNNING); err != nil {
@@ -62,6 +79,19 @@ func (p *processRepo) UpdateProcess(process models.Process) error {
 func (p *processRepo) GetByStatus(status string) ([]models.Process, error) {
 	processes := []models.Process{}
 	return processes, p.db.Select(&processes, `SELECT * FROM Process WHERE status = ?`, status)
+}
+
+func (p *processRepo) GetLatestProcess() (models.Process, error) {
+	process := models.Process{}
+	if err := p.db.Get(&process, `SELECT * FROM Process ORDER BY created_at DESC LIMIT 1`); err != nil {
+		return process, err
+	}
+
+	if process.ID == 0 {
+		return process, ErrNoProcessExists
+	}
+
+	return process, nil
 }
 
 type ProcessRepositoryFactory interface {
