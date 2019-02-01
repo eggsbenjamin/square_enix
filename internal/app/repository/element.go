@@ -1,3 +1,5 @@
+//go:generate mockgen -package repository -source=element.go -destination ./mocks/element.go
+
 package repository
 
 import (

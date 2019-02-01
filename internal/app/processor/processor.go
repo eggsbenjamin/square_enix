@@ -1,3 +1,5 @@
+//go:generate mockgen -package processor -source=processor.go -destination ./mocks/processor.go
+
 package processor
 
 import (
@@ -139,6 +141,10 @@ func (p *processor) ProcessBatch(batchSize int) error {
 
 	elementsToBeProcessed, err := elementRepo.LockElementsForUpdate(process.ID, batchSize)
 	if err != nil {
+		if err := tx.Rollback(); err != nil {
+			log.Fatalf("error rolling back transacton: %q", err)
+		}
+
 		return errors.Wrap(err, "error locking elements")
 	}
 
@@ -158,11 +164,19 @@ func (p *processor) ProcessBatch(batchSize int) error {
 
 		processedElements, err := elementRepo.GetElementsByProcessID(process.ID)
 		if err != nil {
+			if err := tx.Rollback(); err != nil {
+				log.Fatalf("error rolling back transacton: %q", err)
+			}
+
 			return errors.Wrap(err, "error retreiving processed elements")
 		}
 
 		elementsCreatedBeforeProcess, err := elementRepo.GetElementsCreatedBefore(process.CreatedAt)
 		if err != nil {
+			if err := tx.Rollback(); err != nil {
+				log.Fatalf("error rolling back transacton: %q", err)
+			}
+
 			return errors.Wrap(err, "error retreiving elements to be processed")
 		}
 
@@ -174,6 +188,10 @@ func (p *processor) ProcessBatch(batchSize int) error {
 
 		log.Printf("completing proces: %d\n", process.ID)
 		if err := processRepo.UpdateProcess(process); err != nil {
+			if err := tx.Rollback(); err != nil {
+				log.Fatalf("error rolling back transacton: %q", err)
+			}
+
 			return errors.Wrap(err, "error completing process")
 		}
 
@@ -194,6 +212,10 @@ func (p *processor) ProcessBatch(batchSize int) error {
 		element.Data = strings.ToUpper(element.Data)
 
 		if err := elementRepo.UpdateElementForProcess(element, process.ID); err != nil {
+			if err := tx.Rollback(); err != nil {
+				log.Fatalf("error rolling back transacton: %q", err)
+			}
+
 			return errors.Wrap(err, "error updating element")
 		}
 	}

@@ -21,6 +21,8 @@ func NewStartHandler(proc processor.Processor) *StartHandler {
 func (s *StartHandler) Handle(w http.ResponseWriter, req *http.Request) {
 	log.Print("starting process")
 
+	w.Header().Set("Content-Type", "application/json")
+
 	if err := s.proc.Start(); err != nil {
 		if err == processor.ErrRunningProcessExists {
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -49,6 +51,8 @@ func NewStatHandler(proc processor.Processor) *StatHandler {
 }
 
 func (s *StatHandler) Handle(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	stat, err := s.proc.GetLatestsStat()
 	if err != nil {
 		if err == processor.ErrNoProcessExists {
@@ -79,6 +83,8 @@ func NewPauseHandler(proc processor.Processor) *PauseHandler {
 
 func (s *PauseHandler) Handle(w http.ResponseWriter, req *http.Request) {
 	log.Print("pausing process")
+
+	w.Header().Set("Content-Type", "application/json")
 
 	if err := s.proc.Pause(); err != nil {
 		if err == processor.ErrNoProcessExists ||

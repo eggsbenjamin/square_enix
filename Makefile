@@ -1,5 +1,8 @@
-docker_test:
+docker_test: deps
 	docker-compose up
+
+deps:
+	dep ensure -v
 
 test: integration_test
 

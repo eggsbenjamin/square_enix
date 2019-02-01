@@ -25,7 +25,17 @@ PORT=8080 \
 go run ./cmd/*
 ```
 
-All the env vars should be self-explanatory except for `POLL_INTERVAL` which is the time in seconds between the polling of the Process table for work.
+All the env vars should be self-explanatory except for: 
+- `POLL_INTERVAL`: the time in seconds between the polling of the Process table for work.
+- `BATCH_SIZE`: the number of elments to be processed 
+
+### Usage
+
+Start/Resume Process: `PUT /process/start`
+
+Pause Process: `PUT /process/pause`
+
+Get Latest Process Stat: `GET /process/stat`
 
 ### Design
 

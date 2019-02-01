@@ -1,7 +1,10 @@
+//go:generate mockgen -package repository -source=process.go -destination ./mocks/process.go
+
 package repository
 
 import (
 	"errors"
+	"log"
 
 	"github.com/eggsbenjamin/square_enix/internal/app/db"
 	"github.com/eggsbenjamin/square_enix/internal/app/models"
@@ -30,6 +33,12 @@ func NewProcessRepository(db db.Querier) ProcessRepository {
 }
 
 func (p *processRepo) CreateNewProcess() (models.Process, error) {
+	defer func() {
+		if _, err := p.db.Exec("UNLOCK TABLES"); err != nil {
+			log.Fatalf("error unlocking Process table: %q", err)
+		}
+	}()
+
 	var process models.Process
 	if _, err := p.db.Exec("LOCK TABLES Process WRITE"); err != nil {
 		return process, err
@@ -48,31 +57,25 @@ func (p *processRepo) CreateNewProcess() (models.Process, error) {
 		return process, err
 	}
 
-	if err := p.db.Get(&process, "SELECT * FROM Process WHERE status = ?", models.PROCESS_STATUS_RUNNING); err != nil {
-		return process, err
-	}
-
-	if _, err := p.db.Exec("UNLOCK TABLES"); err != nil {
-		return process, err
-	}
-
-	return process, nil
+	return process, p.db.Get(&process, "SELECT * FROM Process WHERE status = ?", models.PROCESS_STATUS_RUNNING)
 }
 
 func (p *processRepo) UpdateProcess(process models.Process) error {
+	defer func() {
+		if _, err := p.db.Exec("UNLOCK TABLES"); err != nil {
+			log.Fatalf("error unlocking Process table: %q", err)
+		}
+	}()
+
 	if _, err := p.db.Exec("LOCK TABLES Process WRITE"); err != nil {
 		return err
 	}
 
-	if _, err := p.db.Exec(
+	_, err := p.db.Exec(
 		"UPDATE Process SET status = ? WHERE id = ?",
 		process.Status,
 		process.ID,
-	); err != nil {
-		return err
-	}
-
-	_, err := p.db.Exec("UNLOCK TABLES")
+	)
 	return err
 }
 
